@@ -1,0 +1,72 @@
+:root {
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: transparent;
+  color: #f8fafc;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.meter {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  grid-template-rows: 20px 1fr 22px;
+  padding: 10px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.94);
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.38);
+}
+
+.meter[data-state="active"] {
+  border-color: rgba(34, 197, 94, 0.56);
+  background: rgba(8, 26, 24, 0.95);
+}
+
+.label {
+  align-self: start;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  color: #94a3b8;
+}
+
+.value {
+  align-self: center;
+  min-width: 0;
+  font-size: 46px;
+  font-weight: 800;
+  line-height: 1;
+  color: #f8fafc;
+  font-variant-numeric: tabular-nums;
+}
+
+.subvalue {
+  align-self: end;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1;
+  color: #cbd5e1;
+}

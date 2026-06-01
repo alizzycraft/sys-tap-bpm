@@ -1,0 +1,22 @@
+[package]
+name = "sys-tap-bpm"
+version = "0.1.0"
+description = "Tray-first tap tempo BPM utility"
+authors = ["sys-tap-bpm"]
+edition = "2021"
+
+[lib]
+name = "sys_tap_bpm_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "sys-tap-bpm"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.6.2", features = [] }
+
+[dependencies]
+image = { version = "0.25.6", default-features = false, features = ["png"] }
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "2.11.2", features = ["image-png", "tray-icon"] }
