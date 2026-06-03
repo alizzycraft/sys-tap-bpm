@@ -16,7 +16,7 @@ use tauri::{
 };
 
 const RESET_AFTER: Duration = Duration::from_secs(3);
-const AVERAGING_WINDOW: Duration = Duration::from_secs(45);
+const AVERAGING_WINDOW: Duration = Duration::from_secs(30);
 const MIN_INTERVALS: usize = 2;
 const STABLE_TAP_DOTS: usize = 24;
 const FLOATING_LABEL: &str = "floating";

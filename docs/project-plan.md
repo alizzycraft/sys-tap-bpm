@@ -84,7 +84,7 @@ Tasks:
 - Add unit tests for interval averaging.
 - Add tests for reset behavior after inactivity.
 - Add tests for rolling window behavior.
-- Decide whether to use last 30, 45, or 60 seconds as the default averaging window.
+- Use the last 30 seconds as the default averaging window.
 - Add optional outlier rejection for accidental late/early taps.
 
 Implementation notes:
@@ -92,6 +92,7 @@ Implementation notes:
 - Prefer averaging intervals, then deriving BPM: `60000 / averageIntervalMs`.
 - Require a minimum number of intervals before showing a BPM.
 - Keep the first tap as session start, not as a BPM-producing input.
+- Default averaging window is 30 seconds.
 
 Acceptance criteria:
 
