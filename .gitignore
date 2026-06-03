@@ -18,6 +18,8 @@
 # Angular CLI and build artefacts
 /.angular-cli.json
 /.ng/
+/src-tauri/target/
+/src-tauri/gen/
 
 # TypeScript cache
 *.tsbuildinfo

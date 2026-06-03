@@ -108,7 +108,11 @@ fn create_tray(app: &AppHandle, state: Arc<SharedState>) -> tauri::Result<TrayIc
             } = event
             {
                 let app = tray.app_handle();
-                handle_tap(&app, tray, &state, rect.position.x, rect.position.y);
+                let (x, y) = match rect.position {
+                    Position::Physical(position) => (position.x as f64, position.y as f64),
+                    Position::Logical(position) => (position.x, position.y),
+                };
+                handle_tap(&app, tray, &state, x, y);
             }
         })
         .build(app)

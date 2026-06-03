@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const outPath = join(root, "src-tauri", "icons", "icon.png");
+const iconDir = join(root, "src-tauri", "icons");
+const pngPath = join(iconDir, "icon.png");
+const icoPath = join(iconDir, "icon.ico");
 
 function crc32(buffer) {
   let crc = 0xffffffff;
@@ -63,6 +65,25 @@ function png(width, height, drawPixel) {
   ]);
 }
 
+function icoFromPng(image) {
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(1, 4);
+
+  const entry = Buffer.alloc(16);
+  entry[0] = 64;
+  entry[1] = 64;
+  entry[2] = 0;
+  entry[3] = 0;
+  entry.writeUInt16LE(1, 4);
+  entry.writeUInt16LE(32, 6);
+  entry.writeUInt32LE(image.length, 8);
+  entry.writeUInt32LE(header.length + entry.length, 12);
+
+  return Buffer.concat([header, entry, image]);
+}
+
 const image = png(64, 64, (x, y) => {
   const dx = x - 32;
   const dy = y - 32;
@@ -83,5 +104,6 @@ const image = png(64, 64, (x, y) => {
   return [71, 85, 105, 255];
 });
 
-mkdirSync(dirname(outPath), { recursive: true });
-writeFileSync(outPath, image);
+mkdirSync(dirname(pngPath), { recursive: true });
+writeFileSync(pngPath, image);
+writeFileSync(icoPath, icoFromPng(image));
