@@ -14,7 +14,7 @@ The first product target is a BPM utility that stays idle most of the time, reac
 - BPM is calculated from recent tap intervals.
 - Tapping resets after 3 seconds of inactivity.
 - Tray tooltip, dynamic tray icon, and floating Angular window are wired.
-- Tray icon can render BPM and a 24-dot stability ring.
+- Tray icon can render BPM above a 15-cell tap indicator grid.
 - Frontend builds pass with `npm run check` and `npm run build`.
 - Local Tauri prerequisite checks pass with Rust, Cargo/rustup, MSVC, Windows SDK, and WebView2 detected.
 - `npm run tauri:dev` launches and the tray icon appears.
@@ -76,6 +76,8 @@ Acceptance criteria:
 
 ## Phase 2: Tap Tempo Correctness
 
+Status: Complete. Optional outlier rejection is deferred until accidental tap handling becomes a real UX problem.
+
 Goal: Make BPM calculation predictable and testable.
 
 Tasks:
@@ -85,7 +87,7 @@ Tasks:
 - Add tests for reset behavior after inactivity.
 - Add tests for rolling window behavior.
 - Use the last 30 seconds as the default averaging window.
-- Add optional outlier rejection for accidental late/early taps.
+- Defer optional outlier rejection for accidental late/early taps.
 
 Implementation notes:
 
@@ -101,19 +103,30 @@ Acceptance criteria:
 
 ## Phase 3: Tray Icon Feedback
 
+Status: Implementation complete. Manual readability verification in the real Windows tray is still required before closing acceptance.
+
 Goal: Make the tray icon useful at a glance.
 
 Tasks:
 
 - Refine the dynamic icon renderer.
-- Confirm 24-dot stability ring readability at real tray sizes.
-- Decide how filled dots should behave after the ring is full:
-  - Option A: keep full ring and highlight newest dot.
+- Confirm 15-cell lower tap indicator grid readability at real tray sizes.
+- Decide how filled indicators should behave after the grid is full:
+  - Option A: keep full indicator and highlight newest cell. Selected.
   - Option B: show moving recent-tap trail.
   - Option C: age dots by brightness.
 - Improve number rendering for 2-digit and 3-digit BPM values.
 - Add icon colors for idle, tapping, stable, and reset states.
 - Consider rendering separate scale variants if Windows blurs the generated PNG.
+- Keep icon colors isolated behind a theme structure so future settings can customize icon elements without rewriting the renderer.
+- Render icon graphics from a 64px logical coordinate system into a scaled backing image. Default render scale is 2x, clamped to a 1.5x-2.5x tuning range for future legibility adjustment.
+- Use a rounded-square tray badge instead of a circular badge to give the stability indicator and BPM digits more usable area at real tray sizes.
+- Render the stability indicator as a 3x5 grid of square cells below the BPM digits instead of border ticks or circular dots.
+- Default stability indicator count is 15 cells to keep each cell legible at real tray sizes.
+- Use larger cell and digit stroke weights so tray downscaling does not reduce key feedback to single-pixel details.
+- Render BPM digits with bold filled bitmap numerals instead of seven-segment calculator-style strokes.
+- Use separate bitmap digit width and height so BPM digits can be taller without making 3-digit values overflow horizontally.
+- Keep indicator cells vertically tighter than horizontally to preserve room for taller BPM digits.
 
 Acceptance criteria:
 
@@ -234,7 +247,7 @@ Manual test cases:
 - Stopping for 3 seconds resets to idle.
 - Floating window appears and hides according to config.
 - Tooltip updates while tapping.
-- Tray icon dots fill around the border.
+- Tray icon grid cells fill as taps are collected.
 - Tray menu quit exits the app.
 - App can be restarted repeatedly without stale windows or tray icons.
 
