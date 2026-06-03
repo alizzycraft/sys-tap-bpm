@@ -3,6 +3,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod domain;
+
+use domain::tap_tempo::{TapTempoConfig, TapTempoSession, TapTempoSnapshot};
 use image::{ImageBuffer, ImageFormat, Rgba};
 use serde::Serialize;
 use tauri::{
@@ -25,9 +28,7 @@ enum DisplayMode {
 
 #[derive(Clone)]
 struct AppConfig {
-    reset_after: Duration,
-    averaging_window: Duration,
-    min_intervals: usize,
+    tap_tempo: TapTempoConfig,
     stable_tap_dots: usize,
     display_mode: DisplayMode,
 }
@@ -35,20 +36,15 @@ struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            reset_after: RESET_AFTER,
-            averaging_window: AVERAGING_WINDOW,
-            min_intervals: MIN_INTERVALS,
+            tap_tempo: TapTempoConfig {
+                reset_after: RESET_AFTER,
+                averaging_window: AVERAGING_WINDOW,
+                min_intervals: MIN_INTERVALS,
+            },
             stable_tap_dots: STABLE_TAP_DOTS,
             display_mode: DisplayMode::IconAndFloating,
         }
     }
-}
-
-#[derive(Default)]
-struct TapState {
-    taps: Vec<Instant>,
-    bpm: Option<f64>,
-    active: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -64,7 +60,7 @@ struct BpmUpdate {
 
 struct SharedState {
     config: AppConfig,
-    taps: Mutex<TapState>,
+    tap_tempo: Mutex<TapTempoSession>,
 }
 
 pub fn run() {
@@ -72,7 +68,7 @@ pub fn run() {
         .setup(|app| {
             let state = Arc::new(SharedState {
                 config: AppConfig::default(),
-                taps: Mutex::new(TapState::default()),
+                tap_tempo: Mutex::new(TapTempoSession::default()),
             });
 
             app.manage(state.clone());
@@ -120,24 +116,9 @@ fn create_tray(app: &AppHandle, state: Arc<SharedState>) -> tauri::Result<TrayIc
 
 fn handle_tap(app: &AppHandle, tray: &TrayIcon, state: &Arc<SharedState>, x: f64, y: f64) {
     let update = {
-        let mut taps = state.taps.lock().expect("tap state poisoned");
-        let now = Instant::now();
-
-        if taps
-            .taps
-            .last()
-            .is_some_and(|last_tap| now.duration_since(*last_tap) > state.config.reset_after)
-        {
-            taps.taps.clear();
-        }
-
-        taps.taps.push(now);
-        taps.taps
-            .retain(|tap| now.duration_since(*tap) <= state.config.averaging_window);
-        taps.bpm = calculate_bpm(&taps.taps, state.config.min_intervals);
-        taps.active = true;
-
-        current_update(&taps, state.config.display_mode)
+        let mut session = state.tap_tempo.lock().expect("tap tempo state poisoned");
+        let snapshot = session.tap(Instant::now(), &state.config.tap_tempo);
+        current_update(snapshot, state.config.display_mode)
     };
 
     publish_update(app, tray, &update, Some((x, y)));
@@ -146,61 +127,40 @@ fn handle_tap(app: &AppHandle, tray: &TrayIcon, state: &Arc<SharedState>, x: f64
 
 fn schedule_reset(app: AppHandle, tray: TrayIcon, state: Arc<SharedState>) {
     std::thread::spawn(move || {
-        std::thread::sleep(state.config.reset_after);
+        std::thread::sleep(state.config.tap_tempo.reset_after);
 
         let update = {
-            let mut taps = state.taps.lock().expect("tap state poisoned");
-            let should_reset = taps
-                .taps
-                .last()
-                .is_some_and(|last_tap| Instant::now().duration_since(*last_tap) >= state.config.reset_after);
-
-            if !should_reset {
+            let mut session = state.tap_tempo.lock().expect("tap tempo state poisoned");
+            let Some(snapshot) =
+                session.reset_if_inactive(Instant::now(), state.config.tap_tempo.reset_after)
+            else {
                 return;
-            }
+            };
 
-            taps.taps.clear();
-            taps.bpm = None;
-            taps.active = false;
-
-            current_update(&taps, state.config.display_mode)
+            current_update(snapshot, state.config.display_mode)
         };
 
         publish_update(&app, &tray, &update, None);
     });
 }
 
-fn calculate_bpm(taps: &[Instant], min_intervals: usize) -> Option<f64> {
-    if taps.len() <= min_intervals {
-        return None;
-    }
-
-    let intervals: Vec<f64> = taps
-        .windows(2)
-        .map(|pair| pair[1].duration_since(pair[0]).as_millis() as f64)
-        .filter(|interval| *interval > 0.0)
-        .collect();
-
-    if intervals.len() < min_intervals {
-        return None;
-    }
-
-    let average_ms = intervals.iter().sum::<f64>() / intervals.len() as f64;
-    Some(60_000.0 / average_ms)
-}
-
-fn current_update(taps: &TapState, display_mode: DisplayMode) -> BpmUpdate {
+fn current_update(snapshot: TapTempoSnapshot, display_mode: DisplayMode) -> BpmUpdate {
     BpmUpdate {
-        bpm: taps.bpm,
-        tap_count: taps.taps.len(),
-        is_active: taps.active,
+        bpm: snapshot.bpm,
+        tap_count: snapshot.tap_count,
+        is_active: snapshot.is_active,
         display_mode: match display_mode {
             DisplayMode::IconAndFloating => "icon-and-floating",
         },
     }
 }
 
-fn publish_update(app: &AppHandle, tray: &TrayIcon, update: &BpmUpdate, position: Option<(f64, f64)>) {
+fn publish_update(
+    app: &AppHandle,
+    tray: &TrayIcon,
+    update: &BpmUpdate,
+    position: Option<(f64, f64)>,
+) {
     let rounded_bpm = update.bpm.map(|bpm| bpm.round() as u16);
     let tooltip = match rounded_bpm {
         Some(bpm) => format!("sys-tap-bpm: {bpm} BPM"),
@@ -208,7 +168,12 @@ fn publish_update(app: &AppHandle, tray: &TrayIcon, update: &BpmUpdate, position
         None => "sys-tap-bpm: tap to start".to_string(),
     };
 
-    if let Ok(icon) = render_icon(rounded_bpm, update.is_active, update.tap_count, STABLE_TAP_DOTS) {
+    if let Ok(icon) = render_icon(
+        rounded_bpm,
+        update.is_active,
+        update.tap_count,
+        STABLE_TAP_DOTS,
+    ) {
         let _ = tray.set_icon(Some(icon));
     }
 
@@ -218,7 +183,8 @@ fn publish_update(app: &AppHandle, tray: &TrayIcon, update: &BpmUpdate, position
     if let Some(window) = app.get_webview_window(FLOATING_LABEL) {
         if update.is_active {
             if let Some((x, y)) = position {
-                let position = Position::Physical(PhysicalPosition::new(x as i32 - 180, y as i32 - 118));
+                let position =
+                    Position::Physical(PhysicalPosition::new(x as i32 - 180, y as i32 - 118));
                 let _ = window.set_position(position);
             }
 
@@ -267,8 +233,11 @@ fn render_icon(
     }
 
     let mut png = Vec::new();
-    image::DynamicImage::ImageRgba8(canvas).write_to(&mut std::io::Cursor::new(&mut png), ImageFormat::Png)?;
-    Image::from_bytes(&png).map_err(|error| image::ImageError::IoError(std::io::Error::new(std::io::ErrorKind::Other, error)))
+    image::DynamicImage::ImageRgba8(canvas)
+        .write_to(&mut std::io::Cursor::new(&mut png), ImageFormat::Png)?;
+    Image::from_bytes(&png).map_err(|error| {
+        image::ImageError::IoError(std::io::Error::new(std::io::ErrorKind::Other, error))
+    })
 }
 
 fn draw_tap_dots(
@@ -303,7 +272,13 @@ fn draw_tap_dots(
     }
 }
 
-fn draw_circle(canvas: &mut ImageBuffer<Rgba<u8>, Vec<u8>>, cx: i32, cy: i32, radius: i32, color: Rgba<u8>) {
+fn draw_circle(
+    canvas: &mut ImageBuffer<Rgba<u8>, Vec<u8>>,
+    cx: i32,
+    cy: i32,
+    radius: i32,
+    color: Rgba<u8>,
+) {
     let radius_squared = radius * radius;
 
     for y in 0..64 {
@@ -332,15 +307,28 @@ fn draw_centered_number(canvas: &mut ImageBuffer<Rgba<u8>, Vec<u8>>, number: u16
         .collect();
     let digit_width = 13;
     let gap = 3;
-    let total_width = digits.len() as i32 * digit_width + (digits.len().saturating_sub(1) as i32 * gap);
+    let total_width =
+        digits.len() as i32 * digit_width + (digits.len().saturating_sub(1) as i32 * gap);
     let start_x = ((64 - total_width) / 2).max(3);
 
     for (index, digit) in digits.iter().enumerate() {
-        draw_digit(canvas, start_x + index as i32 * (digit_width + gap), 18, *digit, color);
+        draw_digit(
+            canvas,
+            start_x + index as i32 * (digit_width + gap),
+            18,
+            *digit,
+            color,
+        );
     }
 }
 
-fn draw_digit(canvas: &mut ImageBuffer<Rgba<u8>, Vec<u8>>, x: i32, y: i32, digit: u8, color: Rgba<u8>) {
+fn draw_digit(
+    canvas: &mut ImageBuffer<Rgba<u8>, Vec<u8>>,
+    x: i32,
+    y: i32,
+    digit: u8,
+    color: Rgba<u8>,
+) {
     const SEGMENTS: [[bool; 7]; 10] = [
         [true, true, true, true, true, true, false],
         [false, true, true, false, false, false, false],
@@ -381,7 +369,14 @@ fn draw_digit(canvas: &mut ImageBuffer<Rgba<u8>, Vec<u8>>, x: i32, y: i32, digit
     }
 }
 
-fn draw_rect(canvas: &mut ImageBuffer<Rgba<u8>, Vec<u8>>, x: i32, y: i32, width: i32, height: i32, color: Rgba<u8>) {
+fn draw_rect(
+    canvas: &mut ImageBuffer<Rgba<u8>, Vec<u8>>,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    color: Rgba<u8>,
+) {
     for py in y.max(0)..(y + height).min(64) {
         for px in x.max(0)..(x + width).min(64) {
             canvas.put_pixel(px as u32, py as u32, color);

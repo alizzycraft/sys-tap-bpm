@@ -16,10 +16,8 @@ The first product target is a BPM utility that stays idle most of the time, reac
 - Tray tooltip, dynamic tray icon, and floating Angular window are wired.
 - Tray icon can render BPM and a 24-dot stability ring.
 - Frontend builds pass with `npm run check` and `npm run build`.
-
-Known environment blocker:
-
-- Local Tauri launch/build still requires Rust, Cargo/rustup, and Visual Studio Build Tools with MSVC + Windows SDK.
+- Local Tauri prerequisite checks pass with Rust, Cargo/rustup, MSVC, Windows SDK, and WebView2 detected.
+- `npm run tauri:dev` launches and the tray icon appears.
 
 ## Product Shape
 
@@ -40,9 +38,24 @@ Support these display modes as configuration, even if the first version ships wi
 - `floating`: BPM appears in a small always-on-top floating window near the tray.
 - `icon-and-floating`: both tray icon and floating UI update while tapping.
 
+## Architecture Direction
+
+Use a skimmed-down onion architecture that keeps the app small while protecting the core tap-tempo behavior from UI and native-host details.
+
+Initial layering:
+
+- Domain core: pure tap-tempo logic, including tap sessions, interval averaging, inactivity reset rules, rolling-window pruning, and BPM snapshots. This layer must not depend on Tauri, Angular, image rendering, filesystem access, or timers.
+- Application/native host: coordinates user actions such as tray clicks and reset checks, owns shared app state, and converts domain snapshots into app updates.
+- Infrastructure/adapters: Tauri tray wiring, window behavior, icon rendering, reset timer scheduling, config persistence, and OS integration.
+- Presentation: Angular floating UI, signal state, and computed display values.
+
+Do not create empty architecture folders before they carry real behavior. Start Phase 2 by extracting only the tap-tempo domain core into a testable Rust module. Split tray, icon, config, and Angular state into separate modules later when their corresponding phases need them.
+
 ## Implementation Phases
 
 ## Phase 1: Runtime Prerequisites
+
+Status: Complete.
 
 Goal: Make the project runnable locally.
 
