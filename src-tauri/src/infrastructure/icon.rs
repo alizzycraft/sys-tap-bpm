@@ -212,12 +212,14 @@ fn draw_tap_grid(
 }
 
 fn visible_start_state(tap_count: usize) -> usize {
-    let Some(newest_index) = tap_count.checked_sub(1) else {
+    if tap_count == 0 {
         return 0;
-    };
+    }
 
-    let newest_group = newest_index / INDICATOR_STATES_PER_ROW;
-    newest_group.saturating_sub(INDICATOR_ROWS - 1) * INDICATOR_STATES_PER_ROW
+    let completed_groups = tap_count / INDICATOR_STATES_PER_ROW;
+    let visible_group_start = completed_groups.saturating_sub(INDICATOR_ROWS - 1);
+
+    visible_group_start * INDICATOR_STATES_PER_ROW
 }
 
 fn draw_indicator_cell(
@@ -480,11 +482,28 @@ mod tests {
     }
 
     #[test]
-    fn full_grid_rolls_by_completed_rows_after_twenty_four_taps() {
+    fn twenty_third_tap_keeps_seven_cells_on_bottom_row() {
         let render = TrayIconRender {
             bpm: None,
             state: IconState::Collecting,
-            tap_count: 25,
+            tap_count: 23,
+            stable_tap_dots: 24,
+            theme: IconTheme::default(),
+            metrics: IconMetrics::default(),
+        };
+
+        let canvas = render_icon_pixels(render);
+
+        assert_eq!(*canvas.get_pixel(18, 18), Rgba([191, 219, 254, 255]));
+        assert_eq!(*canvas.get_pixel(2, 18), Rgba([37, 99, 235, 255]));
+    }
+
+    #[test]
+    fn full_grid_rolls_by_completed_rows_on_twenty_fourth_tap() {
+        let render = TrayIconRender {
+            bpm: None,
+            state: IconState::Collecting,
+            tap_count: 24,
             stable_tap_dots: 24,
             theme: IconTheme::default(),
             metrics: IconMetrics::default(),
@@ -495,8 +514,8 @@ mod tests {
         assert_eq!(*canvas.get_pixel(0, 12), Rgba([191, 219, 254, 255]));
         assert_eq!(*canvas.get_pixel(2, 12), Rgba([191, 219, 254, 255]));
         assert_eq!(*canvas.get_pixel(0, 15), Rgba([191, 219, 254, 255]));
-        assert_eq!(*canvas.get_pixel(2, 15), Rgba([191, 219, 254, 255]));
-        assert_eq!(*canvas.get_pixel(0, 18), Rgba([250, 204, 21, 255]));
+        assert_eq!(*canvas.get_pixel(2, 15), Rgba([250, 204, 21, 255]));
+        assert_eq!(*canvas.get_pixel(0, 18), Rgba([30, 64, 175, 255]));
         assert_eq!(*canvas.get_pixel(2, 18), Rgba([37, 99, 235, 255]));
     }
 

@@ -123,7 +123,7 @@ Tasks:
 - Use a full square tray badge to give the stability indicator and BPM digits the full icon area at real tray sizes.
 - Render the stability indicator as 3 rows of 7 rectangular cells below the BPM digits, with an 8th state per row shown by filling connector gaps so the completed row becomes a solid bar.
 - Default stability indicator count is 24 states: 8 states per row across 3 rows.
-- After the 24-state indicator fills, roll the visible indicator window by whole 8-state rows: drop the oldest completed row, keep the two newer completed rows, and refill the bottom row.
+- On the 24th indicator state, roll the visible indicator window by whole 8-state rows: drop the oldest completed row, keep the two newer completed rows, and leave the bottom row empty for the next group.
 - Use larger cell and digit stroke weights so tray downscaling does not reduce key feedback to single-pixel details.
 - Render BPM digits with bold filled bitmap numerals instead of seven-segment calculator-style strokes.
 - Use separate bitmap digit width and height so BPM digits can be taller without making 3-digit values overflow horizontally.
