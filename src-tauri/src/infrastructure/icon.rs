@@ -1,19 +1,16 @@
 use image::{ImageBuffer, ImageFormat, Rgba};
 use tauri::image::Image;
 
-const LOGICAL_ICON_SIZE: i32 = 64;
-const DEFAULT_RENDER_SCALE: f32 = 2.0;
-const MIN_RENDER_SCALE: f32 = 1.5;
-const MAX_RENDER_SCALE: f32 = 2.5;
-const BADGE_INSET: i32 = 3;
-const BADGE_BOTTOM_OVERHANG: i32 = 3;
-const INDICATOR_COLUMNS: usize = 5;
+const ICON_SIZE: i32 = 20;
+const INDICATOR_COLUMNS: usize = 7;
 const INDICATOR_ROWS: usize = 3;
-const INDICATOR_X: i32 = 8;
-const INDICATOR_Y: i32 = 31;
-const INDICATOR_CELL: i32 = 8;
-const INDICATOR_GAP_X: i32 = 2;
+const INDICATOR_STATES_PER_ROW: usize = INDICATOR_COLUMNS + 1;
+const INDICATOR_Y: i32 = 12;
+const INDICATOR_CELL_WIDTH: i32 = 2;
+const INDICATOR_CELL_HEIGHT: i32 = 2;
+const INDICATOR_GAP_X: i32 = 1;
 const INDICATOR_GAP_Y: i32 = 1;
+const DIGIT_Y: i32 = 0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IconState {
@@ -32,10 +29,8 @@ pub struct TrayIconRender {
     pub metrics: IconMetrics,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct IconMetrics {
-    pub render_scale: f32,
-}
+#[derive(Clone, Copy, Debug, Default)]
+pub struct IconMetrics;
 
 #[derive(Clone, Copy, Debug)]
 pub struct IconTheme {
@@ -81,41 +76,17 @@ impl Default for IconTheme {
     }
 }
 
-impl Default for IconMetrics {
-    fn default() -> Self {
-        Self {
-            render_scale: DEFAULT_RENDER_SCALE,
-        }
-    }
-}
-
-impl IconMetrics {
-    fn scale(self) -> f32 {
-        self.render_scale.clamp(MIN_RENDER_SCALE, MAX_RENDER_SCALE)
-    }
-
-    fn render_size(self) -> u32 {
-        (LOGICAL_ICON_SIZE as f32 * self.scale()).round() as u32
-    }
-
-    fn px(self, logical: i32) -> i32 {
-        (logical as f32 * self.scale()).round() as i32
-    }
-
-    fn px_len(self, logical: i32) -> i32 {
-        (logical as f32 * self.scale()).round().max(1.0) as i32
-    }
-}
-
 #[derive(Clone, Copy)]
 struct DigitStyle {
-    block_width: i32,
-    block_height: i32,
+    column_widths: [i32; DIGIT_COLUMNS],
+    row_heights: [i32; DIGIT_ROWS],
     y: i32,
     gap: i32,
 }
 
 const DIGIT_COLUMNS: usize = 5;
+const DIGIT_ROWS: usize = 7;
+const DIGIT_ROW_HEIGHTS: [i32; DIGIT_ROWS] = [2, 1, 2, 1, 2, 1, 2];
 const DIGIT_BITMAPS: [[&str; 7]; 10] = [
     [
         "11111", "11011", "11011", "11011", "11011", "11011", "11111",
@@ -162,19 +133,8 @@ pub fn render_tray_icon(render: TrayIconRender) -> image::ImageResult<Image<'sta
 fn render_icon_pixels(render: TrayIconRender) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
     let colors = render.theme.colors_for(render.state);
     let metrics = render.metrics;
-    let size = metrics.render_size();
-    let mut canvas = ImageBuffer::from_pixel(size, size, Rgba([0, 0, 0, 0]));
-
-    draw_rounded_rect(
-        &mut canvas,
-        metrics,
-        BADGE_INSET,
-        BADGE_INSET,
-        LOGICAL_ICON_SIZE - BADGE_INSET * 2,
-        LOGICAL_ICON_SIZE - BADGE_INSET * 2 + BADGE_BOTTOM_OVERHANG,
-        7,
-        colors.background,
-    );
+    let size = ICON_SIZE as u32;
+    let mut canvas = ImageBuffer::from_pixel(size, size, colors.background);
     draw_tap_grid(
         &mut canvas,
         metrics,
@@ -218,80 +178,97 @@ fn draw_tap_grid(
         return;
     }
 
-    let filled = tap_count.min(stable_tap_dots);
-    let newest_index = tap_count.saturating_sub(1) % stable_tap_dots;
+    let visible_start = visible_start_state(tap_count);
+    let newest_index = tap_count.checked_sub(1);
+    let highlight_newest = tap_count >= stable_tap_dots;
 
-    for index in 0..stable_tap_dots {
-        let color = if filled == stable_tap_dots && index == newest_index {
-            newest_color
-        } else if index < filled {
-            filled_color
-        } else {
-            empty_color
-        };
+    for row in 0..INDICATOR_ROWS {
+        let row_start = row * INDICATOR_STATES_PER_ROW;
 
-        draw_indicator_cell(canvas, metrics, index, color);
+        for column in 0..INDICATOR_COLUMNS {
+            let state_index = visible_start + row_start + column;
+            let color = if highlight_newest && newest_index == Some(state_index) {
+                newest_color
+            } else if state_index < tap_count {
+                filled_color
+            } else {
+                empty_color
+            };
+
+            draw_indicator_cell(canvas, metrics, row, column, color);
+        }
+
+        let connector_index = visible_start + row_start + INDICATOR_COLUMNS;
+        if connector_index < tap_count {
+            let color = if highlight_newest && newest_index == Some(connector_index) {
+                newest_color
+            } else {
+                filled_color
+            };
+
+            draw_indicator_connector(canvas, metrics, row, color);
+        }
     }
+}
+
+fn visible_start_state(tap_count: usize) -> usize {
+    let Some(newest_index) = tap_count.checked_sub(1) else {
+        return 0;
+    };
+
+    let newest_group = newest_index / INDICATOR_STATES_PER_ROW;
+    newest_group.saturating_sub(INDICATOR_ROWS - 1) * INDICATOR_STATES_PER_ROW
 }
 
 fn draw_indicator_cell(
     canvas: &mut ImageBuffer<Rgba<u8>, Vec<u8>>,
     metrics: IconMetrics,
-    index: usize,
+    row: usize,
+    column: usize,
     color: Rgba<u8>,
 ) {
-    let column = (index % INDICATOR_COLUMNS) as i32;
-    let row = (index / INDICATOR_COLUMNS).min(INDICATOR_ROWS - 1) as i32;
-    let x = INDICATOR_X + column * (INDICATOR_CELL + INDICATOR_GAP_X);
-    let y = INDICATOR_Y + row * (INDICATOR_CELL + INDICATOR_GAP_Y);
+    let x = indicator_cell_x(column);
+    let y = indicator_cell_y(row);
 
-    draw_rect(canvas, metrics, x, y, INDICATOR_CELL, INDICATOR_CELL, color);
+    draw_rect(
+        canvas,
+        metrics,
+        x,
+        y,
+        INDICATOR_CELL_WIDTH,
+        INDICATOR_CELL_HEIGHT,
+        color,
+    );
 }
 
-fn draw_rounded_rect(
+fn draw_indicator_connector(
     canvas: &mut ImageBuffer<Rgba<u8>, Vec<u8>>,
     metrics: IconMetrics,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-    radius: i32,
+    row: usize,
     color: Rgba<u8>,
 ) {
-    let x = metrics.px(x);
-    let y = metrics.px(y);
-    let width = metrics.px_len(width);
-    let height = metrics.px_len(height);
-    let radius = metrics.px_len(radius);
-    let right = x + width - 1;
-    let bottom = y + height - 1;
-    let radius_squared = radius * radius;
+    let y = indicator_cell_y(row);
 
-    for py in y.max(0)..(y + height).min(canvas.height() as i32) {
-        for px in x.max(0)..(x + width).min(canvas.width() as i32) {
-            let corner_dx = if px < x + radius {
-                x + radius - px
-            } else if px > right - radius {
-                px - (right - radius)
-            } else {
-                0
-            };
-            let corner_dy = if py < y + radius {
-                y + radius - py
-            } else if py > bottom - radius {
-                py - (bottom - radius)
-            } else {
-                0
-            };
-
-            if corner_dx == 0
-                || corner_dy == 0
-                || corner_dx * corner_dx + corner_dy * corner_dy <= radius_squared
-            {
-                canvas.put_pixel(px as u32, py as u32, color);
-            }
-        }
+    for gap in 0..(INDICATOR_COLUMNS - 1) {
+        let x = indicator_cell_x(gap) + INDICATOR_CELL_WIDTH;
+        draw_rect(
+            canvas,
+            metrics,
+            x,
+            y,
+            INDICATOR_GAP_X,
+            INDICATOR_CELL_HEIGHT,
+            color,
+        );
     }
+}
+
+fn indicator_cell_x(column: usize) -> i32 {
+    column as i32 * (INDICATOR_CELL_WIDTH + INDICATOR_GAP_X)
+}
+
+fn indicator_cell_y(row: usize) -> i32 {
+    INDICATOR_Y + row as i32 * (INDICATOR_CELL_HEIGHT + INDICATOR_GAP_Y)
 }
 
 fn draw_tap_mark(
@@ -299,9 +276,9 @@ fn draw_tap_mark(
     metrics: IconMetrics,
     color: Rgba<u8>,
 ) {
-    draw_rect(canvas, metrics, 20, 8, 24, 6, color);
-    draw_rect(canvas, metrics, 29, 8, 6, 25, color);
-    draw_rect(canvas, metrics, 22, 28, 20, 6, color);
+    draw_rect(canvas, metrics, 6, 2, 8, 2, color);
+    draw_rect(canvas, metrics, 9, 2, 2, 8, color);
+    draw_rect(canvas, metrics, 7, 8, 6, 2, color);
 }
 
 fn draw_centered_number(
@@ -316,10 +293,10 @@ fn draw_centered_number(
         .filter_map(|byte| byte.checked_sub(b'0'))
         .collect();
     let style = digit_style(digits.len());
-    let digit_width = DIGIT_COLUMNS as i32 * style.block_width;
+    let digit_width = digit_width(style);
     let total_width =
         digits.len() as i32 * digit_width + (digits.len().saturating_sub(1) as i32 * style.gap);
-    let start_x = ((64 - total_width) / 2).max(3);
+    let start_x = ((ICON_SIZE - total_width) / 2).max(0);
 
     for (index, digit) in digits.iter().enumerate() {
         draw_digit(
@@ -337,26 +314,30 @@ fn draw_centered_number(
 fn digit_style(digit_count: usize) -> DigitStyle {
     if digit_count >= 3 {
         DigitStyle {
-            block_width: 3,
-            block_height: 4,
-            y: 1,
-            gap: 2,
+            column_widths: [1, 1, 2, 1, 1],
+            row_heights: DIGIT_ROW_HEIGHTS,
+            y: DIGIT_Y,
+            gap: 1,
         }
     } else if digit_count == 2 {
         DigitStyle {
-            block_width: 4,
-            block_height: 4,
-            y: 3,
+            column_widths: [2, 1, 2, 1, 2],
+            row_heights: DIGIT_ROW_HEIGHTS,
+            y: DIGIT_Y,
             gap: 4,
         }
     } else {
         DigitStyle {
-            block_width: 5,
-            block_height: 5,
-            y: 4,
+            column_widths: [2, 2, 2, 2, 2],
+            row_heights: DIGIT_ROW_HEIGHTS,
+            y: DIGIT_Y,
             gap: 0,
         }
     }
+}
+
+fn digit_width(style: DigitStyle) -> i32 {
+    style.column_widths.iter().sum()
 }
 
 fn draw_digit(
@@ -373,15 +354,19 @@ fn draw_digit(
     };
 
     for (row_index, row) in rows.iter().enumerate() {
+        let row_y = y + style.row_heights[..row_index].iter().sum::<i32>();
+
         for (column_index, cell) in row.as_bytes().iter().enumerate() {
             if *cell == b'1' {
+                let column_x = x + style.column_widths[..column_index].iter().sum::<i32>();
+
                 draw_rect(
                     canvas,
                     metrics,
-                    x + column_index as i32 * style.block_width,
-                    y + row_index as i32 * style.block_height,
-                    style.block_width,
-                    style.block_height,
+                    column_x,
+                    row_y,
+                    style.column_widths[column_index],
+                    style.row_heights[row_index],
                     color,
                 );
             }
@@ -391,17 +376,13 @@ fn draw_digit(
 
 fn draw_rect(
     canvas: &mut ImageBuffer<Rgba<u8>, Vec<u8>>,
-    metrics: IconMetrics,
+    _metrics: IconMetrics,
     x: i32,
     y: i32,
     width: i32,
     height: i32,
     color: Rgba<u8>,
 ) {
-    let x = metrics.px(x);
-    let y = metrics.px(y);
-    let width = metrics.px_len(width);
-    let height = metrics.px_len(height);
     let max_x = canvas.width() as i32;
     let max_y = canvas.height() as i32;
 
@@ -422,18 +403,18 @@ mod tests {
             bpm: None,
             state: IconState::Idle,
             tap_count: 0,
-            stable_tap_dots: 15,
+            stable_tap_dots: 24,
             theme: IconTheme::default(),
             metrics: IconMetrics::default(),
         };
 
         let canvas = render_icon_pixels(render);
 
-        assert_eq!(canvas.width(), 128);
-        assert_eq!(canvas.height(), 128);
-        assert_eq!(*canvas.get_pixel(10, 64), Rgba([51, 65, 85, 255]));
-        assert_eq!(*canvas.get_pixel(64, 64), Rgba([248, 250, 252, 255]));
-        assert_eq!(*canvas.get_pixel(0, 0), Rgba([0, 0, 0, 0]));
+        assert_eq!(canvas.width(), 20);
+        assert_eq!(canvas.height(), 20);
+        assert_eq!(*canvas.get_pixel(4, 12), Rgba([51, 65, 85, 255]));
+        assert_eq!(*canvas.get_pixel(10, 5), Rgba([248, 250, 252, 255]));
+        assert_eq!(*canvas.get_pixel(0, 0), Rgba([51, 65, 85, 255]));
     }
 
     #[test]
@@ -442,7 +423,7 @@ mod tests {
             bpm: None,
             state: IconState::Collecting,
             tap_count: 1,
-            stable_tap_dots: 15,
+            stable_tap_dots: 24,
             theme: IconTheme::default(),
             metrics: IconMetrics::default(),
         };
@@ -454,9 +435,28 @@ mod tests {
             .filter(|pixel| **pixel == Rgba([191, 219, 254, 255]))
             .count();
 
-        assert_eq!(*canvas.get_pixel(64, 64), Rgba([248, 250, 252, 255]));
-        assert_eq!(*canvas.get_pixel(16, 64), Rgba([191, 219, 254, 255]));
-        assert!(filled_cell_pixels > 200);
+        assert_eq!(*canvas.get_pixel(10, 5), Rgba([248, 250, 252, 255]));
+        assert_eq!(*canvas.get_pixel(0, 12), Rgba([191, 219, 254, 255]));
+        assert_eq!(*canvas.get_pixel(2, 12), Rgba([37, 99, 235, 255]));
+        assert_eq!(*canvas.get_pixel(19, 19), Rgba([30, 64, 175, 255]));
+        assert!(filled_cell_pixels >= 4);
+    }
+
+    #[test]
+    fn eighth_state_connects_full_completed_row() {
+        let render = TrayIconRender {
+            bpm: None,
+            state: IconState::Collecting,
+            tap_count: 8,
+            stable_tap_dots: 24,
+            theme: IconTheme::default(),
+            metrics: IconMetrics::default(),
+        };
+
+        let canvas = render_icon_pixels(render);
+
+        assert_eq!(*canvas.get_pixel(2, 12), Rgba([191, 219, 254, 255]));
+        assert_eq!(*canvas.get_pixel(2, 13), Rgba([191, 219, 254, 255]));
     }
 
     #[test]
@@ -464,8 +464,8 @@ mod tests {
         let render = TrayIconRender {
             bpm: Some(120),
             state: IconState::Stable,
-            tap_count: 15,
-            stable_tap_dots: 15,
+            tap_count: 24,
+            stable_tap_dots: 24,
             theme: IconTheme::default(),
             metrics: IconMetrics::default(),
         };
@@ -480,12 +480,33 @@ mod tests {
     }
 
     #[test]
+    fn full_grid_rolls_by_completed_rows_after_twenty_four_taps() {
+        let render = TrayIconRender {
+            bpm: None,
+            state: IconState::Collecting,
+            tap_count: 25,
+            stable_tap_dots: 24,
+            theme: IconTheme::default(),
+            metrics: IconMetrics::default(),
+        };
+
+        let canvas = render_icon_pixels(render);
+
+        assert_eq!(*canvas.get_pixel(0, 12), Rgba([191, 219, 254, 255]));
+        assert_eq!(*canvas.get_pixel(2, 12), Rgba([191, 219, 254, 255]));
+        assert_eq!(*canvas.get_pixel(0, 15), Rgba([191, 219, 254, 255]));
+        assert_eq!(*canvas.get_pixel(2, 15), Rgba([191, 219, 254, 255]));
+        assert_eq!(*canvas.get_pixel(0, 18), Rgba([250, 204, 21, 255]));
+        assert_eq!(*canvas.get_pixel(2, 18), Rgba([37, 99, 235, 255]));
+    }
+
+    #[test]
     fn three_digit_numbers_are_drawn_inside_icon() {
         let render = TrayIconRender {
             bpm: Some(240),
             state: IconState::Stable,
             tap_count: 4,
-            stable_tap_dots: 15,
+            stable_tap_dots: 24,
             theme: IconTheme::default(),
             metrics: IconMetrics::default(),
         };
@@ -496,25 +517,26 @@ mod tests {
             .filter(|pixel| **pixel == Rgba([248, 250, 252, 255]))
             .count();
 
-        assert!(foreground_pixels > 100);
-        assert_eq!(*canvas.get_pixel(0, 0), Rgba([0, 0, 0, 0]));
-        assert_eq!(*canvas.get_pixel(127, 127), Rgba([0, 0, 0, 0]));
+        assert!(foreground_pixels > 30);
+        assert_eq!(*canvas.get_pixel(0, 0), Rgba([248, 250, 252, 255]));
+        assert_eq!(*canvas.get_pixel(1, 11), Rgba([22, 163, 74, 255]));
+        assert_eq!(*canvas.get_pixel(19, 19), Rgba([20, 83, 45, 255]));
     }
 
     #[test]
-    fn custom_render_scale_changes_backing_resolution() {
+    fn icon_uses_direct_twenty_unit_backing_resolution() {
         let render = TrayIconRender {
             bpm: Some(120),
             state: IconState::Stable,
             tap_count: 4,
-            stable_tap_dots: 15,
+            stable_tap_dots: 24,
             theme: IconTheme::default(),
-            metrics: IconMetrics { render_scale: 2.5 },
+            metrics: IconMetrics,
         };
 
         let canvas = render_icon_pixels(render);
 
-        assert_eq!(canvas.width(), 160);
-        assert_eq!(canvas.height(), 160);
+        assert_eq!(canvas.width(), 20);
+        assert_eq!(canvas.height(), 20);
     }
 }

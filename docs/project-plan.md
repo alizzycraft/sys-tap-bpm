@@ -110,7 +110,7 @@ Goal: Make the tray icon useful at a glance.
 Tasks:
 
 - Refine the dynamic icon renderer.
-- Confirm 15-cell lower tap indicator grid readability at real tray sizes.
+- Confirm 24-state lower tap indicator grid readability at real tray sizes.
 - Decide how filled indicators should behave after the grid is full:
   - Option A: keep full indicator and highlight newest cell. Selected.
   - Option B: show moving recent-tap trail.
@@ -119,14 +119,19 @@ Tasks:
 - Add icon colors for idle, tapping, stable, and reset states.
 - Consider rendering separate scale variants if Windows blurs the generated PNG.
 - Keep icon colors isolated behind a theme structure so future settings can customize icon elements without rewriting the renderer.
-- Render icon graphics from a 64px logical coordinate system into a scaled backing image. Default render scale is 2x, clamped to a 1.5x-2.5x tuning range for future legibility adjustment.
-- Use a rounded-square tray badge instead of a circular badge to give the stability indicator and BPM digits more usable area at real tray sizes.
-- Render the stability indicator as a 3x5 grid of square cells below the BPM digits instead of border ticks or circular dots.
-- Default stability indicator count is 15 cells to keep each cell legible at real tray sizes.
+- Render icon graphics directly into a 20x20 unit backing image so each layout unit maps to one displayed tray pixel and indicator gaps stay crisp.
+- Use a full square tray badge to give the stability indicator and BPM digits the full icon area at real tray sizes.
+- Render the stability indicator as 3 rows of 7 rectangular cells below the BPM digits, with an 8th state per row shown by filling connector gaps so the completed row becomes a solid bar.
+- Default stability indicator count is 24 states: 8 states per row across 3 rows.
+- After the 24-state indicator fills, roll the visible indicator window by whole 8-state rows: drop the oldest completed row, keep the two newer completed rows, and refill the bottom row.
 - Use larger cell and digit stroke weights so tray downscaling does not reduce key feedback to single-pixel details.
 - Render BPM digits with bold filled bitmap numerals instead of seven-segment calculator-style strokes.
 - Use separate bitmap digit width and height so BPM digits can be taller without making 3-digit values overflow horizontally.
 - Keep indicator cells vertically tighter than horizontally to preserve room for taller BPM digits.
+- Use a full square background with no rounded-corner transparency so every available tray pixel can carry icon information.
+- Use 2x2 indicator cells with 1-unit horizontal and vertical gaps so the lower grid has no left, right, or bottom margin.
+- Place the BPM digits in the top 11 units, keep a 1-unit gap, and place the 8-unit indicator grid from unit 12 through unit 19.
+- Use a 1-unit gap between 3-digit BPM numerals to avoid digits merging.
 
 Acceptance criteria:
 
