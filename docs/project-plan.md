@@ -13,7 +13,9 @@ The first product target is a BPM utility that stays idle most of the time, reac
 - Tray clicks are handled in Rust.
 - BPM is calculated from recent tap intervals.
 - Tapping resets after 3 seconds of inactivity.
-- Tray tooltip, dynamic tray icon, and floating Angular window are wired.
+- Tray tooltip and dynamic tray icon are wired.
+- Floating Angular UI exists but is currently hidden/disabled while the tray-first experience is refined.
+- Idle tray state uses a dedicated bitmap asset from `assets/tray/idle.png`; active tapping states use the generated BPM icon.
 - Tray icon can render BPM above a 15-cell tap indicator grid.
 - Frontend builds pass with `npm run check` and `npm run build`.
 - Local Tauri prerequisite checks pass with Rust, Cargo/rustup, MSVC, Windows SDK, and WebView2 detected.
@@ -86,15 +88,17 @@ Tasks:
 - Add unit tests for interval averaging.
 - Add tests for reset behavior after inactivity.
 - Add tests for rolling window behavior.
-- Use the last 30 seconds as the default averaging window.
+- Use the last 10 seconds as the default averaging window.
 - Defer optional outlier rejection for accidental late/early taps.
 
 Implementation notes:
 
-- Prefer averaging intervals, then deriving BPM: `60000 / averageIntervalMs`.
+- Estimate BPM with a least-squares tempo line across tap timestamps rather than direct adjacent-interval averaging, so repeated taps settle more cleanly under small human timing jitter.
+- Keep raw BPM separate from stabilized display BPM; publish the stabilized integer BPM to avoid single-digit flicker around rounding boundaries.
+- Show `0` on the first tap, then a provisional display BPM as soon as one interval exists, even before the raw BPM meets the configured minimum interval threshold.
 - Require a minimum number of intervals before showing a BPM.
 - Keep the first tap as session start, not as a BPM-producing input.
-- Default averaging window is 30 seconds.
+- Default averaging window is 10 seconds.
 
 Acceptance criteria:
 
@@ -117,6 +121,8 @@ Tasks:
   - Option C: age dots by brightness.
 - Improve number rendering for 2-digit and 3-digit BPM values.
 - Add icon colors for idle, tapping, stable, and reset states.
+- Keep active tapping and stable reads on the same icon color treatment; use the numbers and indicators rather than color changes for tactile feedback.
+- Active icon colors are `#434343` background, `#ffff00` BPM digits, and `#40d4ff` filled indicators.
 - Consider rendering separate scale variants if Windows blurs the generated PNG.
 - Keep icon colors isolated behind a theme structure so future settings can customize icon elements without rewriting the renderer.
 - Render icon graphics directly into a 20x20 unit backing image so each layout unit maps to one displayed tray pixel and indicator gaps stay crisp.
@@ -140,6 +146,8 @@ Acceptance criteria:
 - BPM values from roughly 40 to 240 are legible enough to be useful.
 
 ## Phase 4: Floating UI
+
+Status: Deferred while the tray-only experience is refined.
 
 Goal: Make the floating Angular window feel deliberate rather than like a generic popup.
 

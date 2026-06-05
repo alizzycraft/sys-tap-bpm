@@ -1,6 +1,7 @@
 use image::{ImageBuffer, ImageFormat, Rgba};
 use tauri::image::Image;
 
+const IDLE_ICON_BYTES: &[u8] = include_bytes!("../../../assets/tray/idle.png");
 const ICON_SIZE: i32 = 20;
 const INDICATOR_COLUMNS: usize = 7;
 const INDICATOR_ROWS: usize = 3;
@@ -59,18 +60,18 @@ impl Default for IconTheme {
                 newest_dot: Rgba([248, 250, 252, 255]),
             },
             collecting: IconColors {
-                background: Rgba([37, 99, 235, 255]),
-                foreground: Rgba([248, 250, 252, 255]),
-                empty_dot: Rgba([30, 64, 175, 255]),
-                filled_dot: Rgba([191, 219, 254, 255]),
-                newest_dot: Rgba([250, 204, 21, 255]),
+                background: Rgba([67, 67, 67, 255]),
+                foreground: Rgba([255, 255, 0, 255]),
+                empty_dot: Rgba([67, 67, 67, 255]),
+                filled_dot: Rgba([64, 212, 255, 255]),
+                newest_dot: Rgba([64, 212, 255, 255]),
             },
             stable: IconColors {
-                background: Rgba([22, 163, 74, 255]),
-                foreground: Rgba([248, 250, 252, 255]),
-                empty_dot: Rgba([20, 83, 45, 255]),
-                filled_dot: Rgba([220, 252, 231, 255]),
-                newest_dot: Rgba([250, 204, 21, 255]),
+                background: Rgba([67, 67, 67, 255]),
+                foreground: Rgba([255, 255, 0, 255]),
+                empty_dot: Rgba([67, 67, 67, 255]),
+                filled_dot: Rgba([64, 212, 255, 255]),
+                newest_dot: Rgba([64, 212, 255, 255]),
             },
         }
     }
@@ -121,13 +122,21 @@ const DIGIT_BITMAPS: [[&str; 7]; 10] = [
 ];
 
 pub fn render_tray_icon(render: TrayIconRender) -> image::ImageResult<Image<'static>> {
-    let canvas = render_icon_pixels(render);
+    let canvas = if render.state == IconState::Idle {
+        render_idle_icon_pixels()?
+    } else {
+        render_icon_pixels(render)
+    };
     let mut png = Vec::new();
     image::DynamicImage::ImageRgba8(canvas)
         .write_to(&mut std::io::Cursor::new(&mut png), ImageFormat::Png)?;
     Image::from_bytes(&png).map_err(|error| {
         image::ImageError::IoError(std::io::Error::new(std::io::ErrorKind::Other, error))
     })
+}
+
+fn render_idle_icon_pixels() -> image::ImageResult<ImageBuffer<Rgba<u8>, Vec<u8>>> {
+    Ok(image::load_from_memory(IDLE_ICON_BYTES)?.to_rgba8())
 }
 
 fn render_icon_pixels(render: TrayIconRender) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
@@ -420,6 +429,14 @@ mod tests {
     }
 
     #[test]
+    fn idle_tray_icon_uses_embedded_asset() {
+        let canvas = render_idle_icon_pixels().expect("expected idle icon asset to load");
+
+        assert!(canvas.width() > ICON_SIZE as u32);
+        assert!(canvas.height() > ICON_SIZE as u32);
+    }
+
+    #[test]
     fn collecting_icon_uses_lower_grid_indicators() {
         let render = TrayIconRender {
             bpm: None,
@@ -434,13 +451,13 @@ mod tests {
 
         let filled_cell_pixels = canvas
             .pixels()
-            .filter(|pixel| **pixel == Rgba([191, 219, 254, 255]))
+            .filter(|pixel| **pixel == Rgba([64, 212, 255, 255]))
             .count();
 
-        assert_eq!(*canvas.get_pixel(10, 5), Rgba([248, 250, 252, 255]));
-        assert_eq!(*canvas.get_pixel(0, 12), Rgba([191, 219, 254, 255]));
-        assert_eq!(*canvas.get_pixel(2, 12), Rgba([37, 99, 235, 255]));
-        assert_eq!(*canvas.get_pixel(19, 19), Rgba([30, 64, 175, 255]));
+        assert_eq!(*canvas.get_pixel(10, 5), Rgba([255, 255, 0, 255]));
+        assert_eq!(*canvas.get_pixel(0, 12), Rgba([64, 212, 255, 255]));
+        assert_eq!(*canvas.get_pixel(2, 12), Rgba([67, 67, 67, 255]));
+        assert_eq!(*canvas.get_pixel(19, 19), Rgba([67, 67, 67, 255]));
         assert!(filled_cell_pixels >= 4);
     }
 
@@ -457,8 +474,8 @@ mod tests {
 
         let canvas = render_icon_pixels(render);
 
-        assert_eq!(*canvas.get_pixel(2, 12), Rgba([191, 219, 254, 255]));
-        assert_eq!(*canvas.get_pixel(2, 13), Rgba([191, 219, 254, 255]));
+        assert_eq!(*canvas.get_pixel(2, 12), Rgba([64, 212, 255, 255]));
+        assert_eq!(*canvas.get_pixel(2, 13), Rgba([64, 212, 255, 255]));
     }
 
     #[test]
@@ -475,7 +492,7 @@ mod tests {
         let canvas = render_icon_pixels(render);
         let newest_pixels = canvas
             .pixels()
-            .filter(|pixel| **pixel == Rgba([250, 204, 21, 255]))
+            .filter(|pixel| **pixel == Rgba([64, 212, 255, 255]))
             .count();
 
         assert!(newest_pixels > 0);
@@ -494,8 +511,8 @@ mod tests {
 
         let canvas = render_icon_pixels(render);
 
-        assert_eq!(*canvas.get_pixel(18, 18), Rgba([191, 219, 254, 255]));
-        assert_eq!(*canvas.get_pixel(2, 18), Rgba([37, 99, 235, 255]));
+        assert_eq!(*canvas.get_pixel(18, 18), Rgba([64, 212, 255, 255]));
+        assert_eq!(*canvas.get_pixel(2, 18), Rgba([67, 67, 67, 255]));
     }
 
     #[test]
@@ -511,12 +528,12 @@ mod tests {
 
         let canvas = render_icon_pixels(render);
 
-        assert_eq!(*canvas.get_pixel(0, 12), Rgba([191, 219, 254, 255]));
-        assert_eq!(*canvas.get_pixel(2, 12), Rgba([191, 219, 254, 255]));
-        assert_eq!(*canvas.get_pixel(0, 15), Rgba([191, 219, 254, 255]));
-        assert_eq!(*canvas.get_pixel(2, 15), Rgba([250, 204, 21, 255]));
-        assert_eq!(*canvas.get_pixel(0, 18), Rgba([30, 64, 175, 255]));
-        assert_eq!(*canvas.get_pixel(2, 18), Rgba([37, 99, 235, 255]));
+        assert_eq!(*canvas.get_pixel(0, 12), Rgba([64, 212, 255, 255]));
+        assert_eq!(*canvas.get_pixel(2, 12), Rgba([64, 212, 255, 255]));
+        assert_eq!(*canvas.get_pixel(0, 15), Rgba([64, 212, 255, 255]));
+        assert_eq!(*canvas.get_pixel(2, 15), Rgba([64, 212, 255, 255]));
+        assert_eq!(*canvas.get_pixel(0, 18), Rgba([67, 67, 67, 255]));
+        assert_eq!(*canvas.get_pixel(2, 18), Rgba([67, 67, 67, 255]));
     }
 
     #[test]
@@ -533,13 +550,13 @@ mod tests {
         let canvas = render_icon_pixels(render);
         let foreground_pixels = canvas
             .pixels()
-            .filter(|pixel| **pixel == Rgba([248, 250, 252, 255]))
+            .filter(|pixel| **pixel == Rgba([255, 255, 0, 255]))
             .count();
 
         assert!(foreground_pixels > 30);
-        assert_eq!(*canvas.get_pixel(0, 0), Rgba([248, 250, 252, 255]));
-        assert_eq!(*canvas.get_pixel(1, 11), Rgba([22, 163, 74, 255]));
-        assert_eq!(*canvas.get_pixel(19, 19), Rgba([20, 83, 45, 255]));
+        assert_eq!(*canvas.get_pixel(0, 0), Rgba([255, 255, 0, 255]));
+        assert_eq!(*canvas.get_pixel(1, 11), Rgba([67, 67, 67, 255]));
+        assert_eq!(*canvas.get_pixel(19, 19), Rgba([67, 67, 67, 255]));
     }
 
     #[test]

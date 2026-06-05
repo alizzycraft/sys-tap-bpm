@@ -6,10 +6,10 @@ A small Tauri + Angular 21 system tray tap-tempo utility.
 
 - Runs from the system tray.
 - Left-click the tray icon repeatedly to tap a tempo.
-- The app averages tap intervals from the latest 45 seconds.
+- The app estimates BPM from taps in the latest 10 seconds.
 - If tapping stops for 3 seconds, the session resets.
-- BPM is shown in the tray tooltip, in the tray icon, and in a small floating window.
-- The tray icon border has 24 dots to show how many taps are contributing to the current read; once full, the newest tap advances around the ring.
+- BPM is shown in the tray tooltip and tray icon.
+- The tray icon uses a 24-state lower indicator grid: 3 rows of 8 tap states. Completed rows become solid bars, and the visible indicator window rolls by whole rows as tapping continues.
 
 ## Development
 

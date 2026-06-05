@@ -12,18 +12,17 @@ use serde::Serialize;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, PhysicalPosition, Position,
+    AppHandle, Manager,
 };
 
 const RESET_AFTER: Duration = Duration::from_secs(3);
-const AVERAGING_WINDOW: Duration = Duration::from_secs(30);
+const AVERAGING_WINDOW: Duration = Duration::from_secs(10);
 const MIN_INTERVALS: usize = 2;
 const STABLE_TAP_DOTS: usize = 24;
-const FLOATING_LABEL: &str = "floating";
 
 #[derive(Clone, Copy)]
 enum DisplayMode {
-    IconAndFloating,
+    Icon,
 }
 
 #[derive(Clone)]
@@ -46,7 +45,7 @@ impl Default for AppConfig {
             stable_tap_dots: STABLE_TAP_DOTS,
             icon_theme: IconTheme::default(),
             icon_metrics: IconMetrics::default(),
-            display_mode: DisplayMode::IconAndFloating,
+            display_mode: DisplayMode::Icon,
         }
     }
 }
@@ -110,33 +109,27 @@ fn create_tray(app: &AppHandle, state: Arc<SharedState>) -> tauri::Result<TrayIc
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
-                rect,
                 ..
             } = event
             {
-                let app = tray.app_handle();
-                let (x, y) = match rect.position {
-                    Position::Physical(position) => (position.x as f64, position.y as f64),
-                    Position::Logical(position) => (position.x, position.y),
-                };
-                handle_tap(&app, tray, &state, x, y);
+                handle_tap(tray, &state);
             }
         })
         .build(app)
 }
 
-fn handle_tap(app: &AppHandle, tray: &TrayIcon, state: &Arc<SharedState>, x: f64, y: f64) {
+fn handle_tap(tray: &TrayIcon, state: &Arc<SharedState>) {
     let update = {
         let mut session = state.tap_tempo.lock().expect("tap tempo state poisoned");
         let snapshot = session.tap(Instant::now(), &state.config.tap_tempo);
         current_update(snapshot, state.config.display_mode)
     };
 
-    publish_update(app, tray, &state.config, &update, Some((x, y)));
-    schedule_reset(app.clone(), tray.clone(), state.clone());
+    publish_update(tray, &state.config, &update);
+    schedule_reset(tray.clone(), state.clone());
 }
 
-fn schedule_reset(app: AppHandle, tray: TrayIcon, state: Arc<SharedState>) {
+fn schedule_reset(tray: TrayIcon, state: Arc<SharedState>) {
     std::thread::spawn(move || {
         std::thread::sleep(state.config.tap_tempo.reset_after);
 
@@ -151,29 +144,23 @@ fn schedule_reset(app: AppHandle, tray: TrayIcon, state: Arc<SharedState>) {
             current_update(snapshot, state.config.display_mode)
         };
 
-        publish_update(&app, &tray, &state.config, &update, None);
+        publish_update(&tray, &state.config, &update);
     });
 }
 
 fn current_update(snapshot: TapTempoSnapshot, display_mode: DisplayMode) -> BpmUpdate {
     BpmUpdate {
-        bpm: snapshot.bpm,
+        bpm: snapshot.display_bpm.map(f64::from),
         tap_count: snapshot.tap_count,
         is_active: snapshot.is_active,
         display_mode: match display_mode {
-            DisplayMode::IconAndFloating => "icon-and-floating",
+            DisplayMode::Icon => "icon",
         },
     }
 }
 
-fn publish_update(
-    app: &AppHandle,
-    tray: &TrayIcon,
-    config: &AppConfig,
-    update: &BpmUpdate,
-    position: Option<(f64, f64)>,
-) {
-    let rounded_bpm = update.bpm.map(|bpm| bpm.round() as u16);
+fn publish_update(tray: &TrayIcon, config: &AppConfig, update: &BpmUpdate) {
+    let rounded_bpm = update.bpm.map(|bpm| bpm as u16);
     let tooltip = match rounded_bpm {
         Some(bpm) => format!("sys-tap-bpm: {bpm} BPM"),
         None if update.is_active => "sys-tap-bpm: listening...".to_string(),
@@ -192,22 +179,6 @@ fn publish_update(
     }
 
     let _ = tray.set_tooltip(Some(&tooltip));
-    let _ = app.emit_to(FLOATING_LABEL, "bpm-update", update);
-
-    if let Some(window) = app.get_webview_window(FLOATING_LABEL) {
-        if update.is_active {
-            if let Some((x, y)) = position {
-                let position =
-                    Position::Physical(PhysicalPosition::new(x as i32 - 180, y as i32 - 118));
-                let _ = window.set_position(position);
-            }
-
-            let _ = window.show();
-            let _ = window.set_focus();
-        } else {
-            let _ = window.hide();
-        }
-    }
 }
 
 fn icon_state(update: &BpmUpdate) -> IconState {
